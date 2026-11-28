@@ -3,6 +3,7 @@
 #include "RenderSystemDX11Hooks.h"
 
 #include "CampathDrawer.h"
+#include "MirvAr.h"
 #include "RenderServiceHooks.h"
 #include "ReShadeAdvancedfx.h"
 #include "WrpConsole.h"
@@ -1660,6 +1661,10 @@ public:
         for(int i=0;i<DepthTextureTypeCount;i++) m_HasNormalDepth[i] = false;
     }
 
+    ID3D11ShaderResourceView* GetSmokeDepthSrv() const {
+        return m_HasSmokeDepth ? m_pSmokeDepthTextureSrv : nullptr;
+    }
+
 private:
     ID3D11Device * m_pDevice = nullptr;
     D3D11_TEXTURE2D_DESC m_DeviceTextureDesc = {};
@@ -1743,6 +1748,10 @@ private:
         }
     }
 } g_DepthCompositor;
+
+ID3D11ShaderResourceView* AfxGetSmokeDepthSrv() {
+    return g_DepthCompositor.GetSmokeDepthSrv();
+}
 
 
 IDXGISwapChain * g_pSwapChain = nullptr;
@@ -2431,6 +2440,7 @@ public:
         g_bDetectSmoke =
             g_ReShadeAdvancedfx.IsConnected() && g_bEnableReShade && g_bReShadeCompositeSmoke
             || g_bCompositeSmoke
+            || g_MirvAr.HasVisible()
         ;
         delete this;
     }

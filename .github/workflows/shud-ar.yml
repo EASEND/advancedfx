@@ -1,0 +1,73 @@
+# SHUD AR: builds AfxHookSource2.dll (x64) with mirv_ar and packs it over the
+# official HLAE release of the same version. Result: release "hlae-shud-ar-*.zip"
+# that SHUD downloads ("AR на карте" → «Скачать HLAE для SHUD»).
+name: SHUD HLAE (AR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      hlae_tag:
+        description: "Official HLAE release to pack over (must match this branch's base)"
+        default: "v2.193.2"
+  push:
+    branches: [shud-ar]
+
+permissions:
+  contents: write
+
+env:
+  HLAE_TAG: ${{ inputs.hlae_tag || 'v2.193.2' }}
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/iron
+
+      - name: Rust target
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Configure (x64 release)
+        run: cmake --preset x64-release
+
+      - name: Build AfxHookSource2
+        run: cmake --build --preset x64-release --target AfxHookSource2 --parallel
+
+      - name: Pack over official HLAE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release download $env:HLAE_TAG -R advancedfx/advancedfx -p "hlae_*.zip" -D dl
+          $zip = Get-ChildItem dl -Filter "hlae_*.zip" | Where-Object { $_.Name -notmatch "pdb" } | Select-Object -First 1
+          if (-not $zip) { throw "official HLAE zip not found for $env:HLAE_TAG" }
+          Expand-Archive $zip.FullName -DestinationPath out
+          $dll = Get-ChildItem build/x64-release -Recurse -Filter AfxHookSource2.dll | Select-Object -First 1
+          if (-not $dll) { throw "built AfxHookSource2.dll not found" }
+          $target = Get-ChildItem out -Recurse -Filter AfxHookSource2.dll | Where-Object { $_.DirectoryName -match "x64$" } | Select-Object -First 1
+          if (-not $target) { throw "x64/AfxHookSource2.dll not found in official zip" }
+          Copy-Item $dll.FullName $target.FullName -Force
+          $root = $target.Directory.Parent.FullName
+          "SHUD AR $env:HLAE_TAG-b$($env:GITHUB_RUN_NUMBER) ($($env:GITHUB_SHA.Substring(0,7)))" | Out-File -Encoding utf8 (Join-Path $root "SHUD-AR.txt")
+          Compress-Archive -Path (Join-Path $root "*") -DestinationPath "hlae-shud-ar-$env:HLAE_TAG.zip"
+          Get-ChildItem *.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hlae-shud-ar
+          path: hlae-shud-ar-*.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: shud-ar-${{ env.HLAE_TAG }}-${{ github.run_number }}
+          name: HLAE for SHUD (AR) ${{ env.HLAE_TAG }} build ${{ github.run_number }}
+          files: hlae-shud-ar-*.zip
+          make_latest: true
